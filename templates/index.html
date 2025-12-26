@@ -1,0 +1,30 @@
+<!--template/index.html-->
+<!DOCTYPE html>
+<html>
+<title>SMART RESUME ANALYZER (SRA)</title>  <!--webname needs to be renamed later-->>
+<body>
+<!--NOTE TO SELF, LATER USE JAVASCRIPT TO REDIRECT THE WEBURL AND UPDATE IT ON THE APP.PY-->>
+<!-- Note to self, need to add more informations on the purpose of this page for more fluf -->
+<h1>SMART RESUME ANALYZER</h1>
+    <h3> Please Enter your resume </h3>
+        <form id="Upload" action="/handleform" method="POST" enctype="multipart/form-data">
+            <label type ="file">Select file:</label>
+            <input type = "file"  name ="file">
+            <!--input type=""submit :"not needed now"-->
+            <button id = "myButton()">Submit</button>
+        </form>
+        <div id="messageDisplayArea"></div>
+        <script>
+            //referenceing the form and the div
+            const uploadField = document.getElementById("Upload"); 
+            const message = document.getElementById("messageDisplayArea");
+            
+            //event listener
+            Upload.addEventListener("submit", funtion(event)){
+                event.preventDefault();
+
+            }
+        </script>
+    
+</body>
+</html>
