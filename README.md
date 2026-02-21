@@ -51,29 +51,3 @@ Add .docx resume support
 Add ranking & downloadable reports
 
 Deploy to the cloud (Render, Railway, etc.)
-
-
----
-
-## Strong Resume Bullet Point for This Project
-
-Here’s a polished bullet you can drop directly into your resume under a “Projects” or “Experience” section:
-
-**Resume Analyzer (Python · Flask · NLP)**  
-• Built a Flask-based web application that extracts resume text from PDFs and job descriptions from URLs, then computes a similarity score using TF-IDF vectorization and cosine similarity to quantify resume–job fit  
-• Developed a text normalization and processing pipeline that feeds into a custom matching engine to identify overlapping and missing keywords between resume and job description  
-• Integrated two-stage HTML extraction (requests + Playwright) and session-based workflow for seamless user interaction and scoring results
-
----
-
-## Why this wording works
-
-- It describes **concrete technologies** you actually used (Flask, TF-IDF, cosine similarity). :contentReference[oaicite:3]{index=3}  
-- It doesn’t over-claim concurrency or scalability (you don’t have a threaded server or async yet).  
-- It signals **full stack systems thinking** with text processing, web UI, backend logic, and matching engine.  
-- It’s specific enough to pass technical resume parsers and human reviewers alike.
-
----
-
-If you want, I can help you write a **README badge set** (e.g., build status, license, tech stack icons) or draft a **project summary paragraph** for your LinkedIn using this content.
-::contentReference[oaicite:4]{index=4}
