@@ -1,30 +1,46 @@
-<!--template/index.html-->
+<!-- templates/index.html -->
 <!DOCTYPE html>
 <html>
-<title>SMART RESUME ANALYZER (SRA)</title>  <!--webname needs to be renamed later-->>
+<head>
+  <title>SMART RESUME ANALYZER (SRA)</title>  <!--webname needs to be renamed later-->
+</head>
 <body>
-<!--NOTE TO SELF, LATER USE JAVASCRIPT TO REDIRECT THE WEBURL AND UPDATE IT ON THE APP.PY-->>
+<!--NOTE TO SELF, LATER USE JAVASCRIPT TO REDIRECT THE WEBURL AND UPDATE IT ON THE APP.PY-->
 <!-- Note to self, need to add more informations on the purpose of this page for more fluf -->
 <h1>SMART RESUME ANALYZER</h1>
-    <h3> Please Enter your resume </h3>
-        <form id="Upload" action="/handleform" method="POST" enctype="multipart/form-data">
-            <label type ="file">Select file:</label>
-            <input type = "file"  name ="file">
-            <!--input type=""submit :"not needed now"-->
-            <button id = "myButton()">Submit</button>
-        </form>
-        <div id="messageDisplayArea"></div>
-        <script>
-            //referenceing the form and the div
-            const uploadField = document.getElementById("Upload"); 
-            const message = document.getElementById("messageDisplayArea");
-            
-            //event listener
-            Upload.addEventListener("submit", funtion(event)){
-                event.preventDefault();
 
-            }
-        </script>
-    
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <ul>
+      {% for message in messages %}
+        <li>{{ message }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endwith %}
+
+<h3>Please Enter your resume</h3>
+<form action="/analyze" method="POST" enctype="multipart/form-data">
+  <input type="file" name="resume_file" accept=".pdf">
+  <button type="submit">Submit</button>
+</form>
+
+<h4>Please Enter the Job URL</h4>
+<form action="/url_analyze" method="POST">
+  <input type="text" name="job_url" placeholder="Enter Job URL here"
+         value="{{ session.get('job_url','') }}">
+  <button type="submit">Submit</button>
+</form>
+
+<h4>Get your score</h4>
+<form action="/score_match" method="POST">
+  <button type="submit">Get Score</button>
+</form>
+
+{% if session.get("match_result") %}
+  <h3>Match Result</h3>
+  <pre>{{ session.get("match_result") }}</pre>
+{% endif %}
+
 </body>
 </html>
