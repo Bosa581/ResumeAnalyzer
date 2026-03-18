@@ -1,46 +1,194 @@
-<!-- templates/index.html -->
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>SMART RESUME ANALYZER (SRA)</title>  <!--webname needs to be renamed later-->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Resume Analyzer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 950px;
+      margin: 40px auto;
+      padding: 20px;
+      line-height: 1.6;
+      background: #f7f7f7;
+      color: #222;
+    }
+
+    h1, h2, h3 {
+      margin-bottom: 10px;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    .flash {
+      background: #fff3cd;
+      color: #856404;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+
+    input[type="text"],
+    input[type="file"] {
+      width: 100%;
+      padding: 10px;
+      margin-top: 8px;
+      margin-bottom: 12px;
+      box-sizing: border-box;
+    }
+
+    button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #1f6feb;
+      color: white;
+      font-weight: bold;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    .secondary-btn {
+      background: #666;
+    }
+
+    ul {
+      margin-top: 8px;
+    }
+
+    .status {
+      font-weight: bold;
+      margin-top: 8px;
+    }
+
+    .score {
+      font-size: 1.4rem;
+      font-weight: bold;
+      color: #0a7a2f;
+    }
+
+    .preview {
+      max-height: 220px;
+      overflow-y: auto;
+      background: #f8f9fa;
+      padding: 12px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+    }
+  </style>
 </head>
 <body>
-<!--NOTE TO SELF, LATER USE JAVASCRIPT TO REDIRECT THE WEBURL AND UPDATE IT ON THE APP.PY-->
-<!-- Note to self, need to add more informations on the purpose of this page for more fluf -->
-<h1>SMART RESUME ANALYZER</h1>
 
-{% with messages = get_flashed_messages() %}
-  {% if messages %}
-    <ul>
+  <h1>Smart Resume Analyzer</h1>
+  <p>Upload a resume PDF, enter a job posting URL, and compare the match using TF-IDF + cosine similarity.</p>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
       {% for message in messages %}
-        <li>{{ message }}</li>
+        <div class="flash">{{ message }}</div>
       {% endfor %}
-    </ul>
+    {% endif %}
+  {% endwith %}
+
+  <div class="card">
+    <h3>Please Enter your resume</h3>
+    <form action="/analyze" method="POST" enctype="multipart/form-data">
+      <input type="file" name="resume_file" accept=".pdf" required>
+      <button type="submit">Submit Resume</button>
+    </form>
+
+    <div class="status">
+      Resume status:
+      {% if resume_uploaded %}
+        Loaded
+      {% else %}
+        Not loaded
+      {% endif %}
+    </div>
+
+    {% if resume_preview %}
+      <h3>Resume Preview</h3>
+      <div class="preview">{{ resume_preview }}</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h4>Please Enter the Job URL</h4>
+    <form action="/url_analyze" method="POST">
+      <input type="text" name="job_url" placeholder="Enter Job URL here"
+             value="{{ session.get('job_url','') }}" required>
+      <button type="submit">Submit Job URL</button>
+    </form>
+
+    <div class="status">
+      Job description status:
+      {% if job_loaded %}
+        Loaded
+      {% else %}
+        Not loaded
+      {% endif %}
+    </div>
+
+    {% if job_extract_mode %}
+      <p><strong>Extraction mode:</strong> {{ job_extract_mode }}</p>
+    {% endif %}
+
+    {% if job_preview %}
+      <h3>Job Description Preview</h3>
+      <div class="preview">{{ job_preview }}</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>3. Generate Match Score</h2>
+    <form action="/score_match" method="POST" style="display:inline-block;">
+      <button type="submit">Get Score</button>
+    </form>
+
+    <form action="/clear" method="POST" style="display:inline-block; margin-left: 10px;">
+      <button type="submit" class="secondary-btn">Clear Session</button>
+    </form>
+  </div>
+
+  {% if match_result %}
+    <div class="card">
+      <h2>Match Result</h2>
+      <p class="score">{{ match_result.similarity_percent }}%</p>
+      <p><strong>Raw similarity:</strong> {{ match_result.similarity }}</p>
+
+      <h3>Top Overlap Keywords</h3>
+      {% if match_result.overlap_keywords %}
+        <ul>
+          {% for word in match_result.overlap_keywords %}
+            <li>{{ word }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>No overlapping keywords found.</p>
+      {% endif %}
+
+      <h3>Top Missing Keywords</h3>
+      {% if match_result.missing_keywords %}
+        <ul>
+          {% for word in match_result.missing_keywords %}
+            <li>{{ word }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>No missing keywords found.</p>
+      {% endif %}
+    </div>
   {% endif %}
-{% endwith %}
-
-<h3>Please Enter your resume</h3>
-<form action="/analyze" method="POST" enctype="multipart/form-data">
-  <input type="file" name="resume_file" accept=".pdf">
-  <button type="submit">Submit</button>
-</form>
-
-<h4>Please Enter the Job URL</h4>
-<form action="/url_analyze" method="POST">
-  <input type="text" name="job_url" placeholder="Enter Job URL here"
-         value="{{ session.get('job_url','') }}">
-  <button type="submit">Submit</button>
-</form>
-
-<h4>Get your score</h4>
-<form action="/score_match" method="POST">
-  <button type="submit">Get Score</button>
-</form>
-
-{% if session.get("match_result") %}
-  <h3>Match Result</h3>
-  <pre>{{ session.get("match_result") }}</pre>
-{% endif %}
 
 </body>
 </html>

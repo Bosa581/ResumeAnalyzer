@@ -4,13 +4,23 @@ from flask import Flask, flash, session, request, redirect, url_for, render_temp
 import requests
 import secrets
 from match import Match
-
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
+import re
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 
+app_data = {
+    "resume_raw_text": "",
+    "job_text": "",
+    "resume_preview": "",
+    "job_preview": "",
+    "job_extract_mode": "",
+    "job_url": "",
+    "match_result": None,
+}
 # -----------------------------
 # URL utilities
 # -----------------------------
@@ -32,24 +42,57 @@ uploaded_File_Placeholder = None  # Placeholder for uploaded file
 def extract_text_from_pdf(uploaded_file):
     text = extract_text(uploaded_file.stream)
     session["resume_raw_text"] = text
+    app_data["resume_raw_text"] = text
     return text
+
+
 # HTML -> visible text (BeautifulSoup)
-def bs4_visible_text_from_html(html: str) -> str:
+def bs4_visible_text_from_html(html: str):
     soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script", "style", "noscript"]):
+
+    # Remove obvious noise
+    for tag in soup(["script", "style", "noscript", "header", "footer", "nav"]):
         tag.decompose()
-    return soup.get_text(separator=" ", strip=True)
+
+    # Try to locate job-relevant sections
+    keywords = ["responsibilities", "requirements", "qualifications", "about", "job"]
+
+    sections = []
+
+    for tag in soup.find_all(["h1", "h2", "h3", "strong"]):
+        header_text = tag.get_text().lower()
+
+        if any(k in header_text for k in keywords):
+            # collect next siblings (content under that section)
+            sibling = tag.find_next_sibling()
+            count = 0
+
+            while sibling and count < 10:
+                text = sibling.get_text(" ", strip=True)
+                if text:
+                    sections.append(text)
+                sibling = sibling.find_next_sibling()
+                count += 1
+
+    # fallback if nothing found
+    if not sections:
+        elements = soup.find_all(["p", "li"])
+        sections = [el.get_text(strip=True) for el in elements if el.get_text(strip=True)]
+
+    text = " ".join(sections)
+
+    return text
 
 
 # Fetch HTML via requests
-def fetch_html_requests(url: str) -> tuple[str, int]:
+def fetch_html_requests(url: str):
     headers = {"User-Agent": "Mozilla/5.0"}
     resp = requests.get(url, timeout=10, headers=headers, allow_redirects=True)
     return resp.text or "", resp.status_code
 
 
 # Fetch HTML via browser render (Playwright)
-def fetch_html_rendered(url: str) -> str:
+def fetch_html_rendered(url: str):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page(user_agent="Mozilla/5.0")
@@ -62,12 +105,10 @@ def fetch_html_rendered(url: str) -> str:
 # Two-stage URL text extraction:
 # 1) requests + bs4
 # 2) if too short, Playwright render + bs4
-def extract_text_from_url(url: str) -> tuple[str, str]:
+def extract_text_from_url(url: str):
     """
     Returns (extracted_text, mode)
       mode: 'requests' or 'rendered'
-
-    Raises ValueError for invalid/blocked/unextractable cases.
     """
     if not url:
         raise ValueError("Enter a URL")
@@ -82,7 +123,7 @@ def extract_text_from_url(url: str) -> tuple[str, str]:
     text = bs4_visible_text_from_html(html)
 
     # Heuristic: if we got enough text, accept it
-    if len(text) >= 300:
+    if len(text) >= 300 and "cookie" not in text.lower():
         return text, "requests"
 
     # Attempt 2: render JS and parse
@@ -90,63 +131,59 @@ def extract_text_from_url(url: str) -> tuple[str, str]:
     rendered_text = bs4_visible_text_from_html(rendered_html)
 
     if len(rendered_text) < 300:
-        raise ValueError("Page fetched but meaningful text not found (JS-rendered, consent page, or blocked)")
+        raise ValueError("Page fetched but meaningful text not found")
 
-    return rendered_text, "rendered" #returns (job_text, mode)
+    return rendered_text, "rendered"  # returns (job_text, mode)
 
-def normalize_description(job_text):  #we are looking for a developer with python's flask with some experince in c++
-    lowercase = job_text.lower()
-    newlowercase = ""
-    empty = " "
-    #removing punctuation
-    non_punctuation = "abcdefghijklmnopqrstuvwxyz0123456789+.#"
-    for x in range(len(lowercase)):
-        if lowercase[x] in non_punctuation:
-            newlowercase = newlowercase + lowercase[x]
-        else:
-            newlowercase = newlowercase + empty
-    return newlowercase
 
-#normalize resume for better matching via tf-idf
-def normalize_resume(resume_text):
-    lowercase = resume_text.lower()
-    newlowercase = ""
-    empty = " "
-    #removing punctuation
-    non_punctuation = "abcdefghijklmnopqrstuvwxyz0123456789+.#"
-    for x in range(len(lowercase)):
-        if lowercase[x] in non_punctuation:
-            newlowercase = newlowercase + lowercase[x]
-        else:
-            newlowercase = newlowercase + empty
-    return newlowercase
+# normalize job description for better matching via tf-idf
+def normalize_text(text):
+    text = text.lower()
 
-#tf-idf vectorization and matching, it uses cosine similarity to determine how similar 
-# the resume is to the job description and returns a similarity score between 0 and 1
-#Matrix where each row is a document (resume, job) and each column is a term weighted by TF-IDF importance.
-#cosine_sim
-#Matrix of cosine similarities between document vectors; cosine_sim[0][1] is the resume-to-job match score.
-#shoutout to data mining lol
+    # Preserve important technical tokens
+    text = re.sub(r"[^a-z0-9+#.\s]", " ", text)
+
+    # Remove extra spaces
+    text = re.sub(r"\s+", " ", text).strip()
+
+    return text
+
 # Routes
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template(
+        'index.html',
+        resume_uploaded=bool(app_data.get("resume_raw_text")),
+        job_loaded=bool(app_data.get("job_text")),
+        resume_preview=app_data.get("resume_preview", ""),
+        job_preview=app_data.get("job_preview", ""),
+        job_extract_mode=app_data.get("job_extract_mode", ""),
+        match_result=app_data.get("match_result"),
+        job_url=app_data.get("job_url", ""),
+    )
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
     uploaded_file = request.files.get("resume_file")
-    if not uploaded_file:
+
+    if uploaded_file is None or uploaded_file.filename == "":
         flash("No resume uploaded.")
         return redirect(url_for('index'))
 
     resume_text = extract_text_from_pdf(uploaded_file)
-    session["resume_raw_text"] = resume_text
+    app_data["resume_preview"] = resume_text[:1000]
 
-    return f"Resume preview:<br><pre>{resume_text[:2500]}</pre>"
+    return redirect(url_for('index'))
+
 
 @app.route('/url_analyze', methods=['POST'])
 def url_analyze():
-    raw_job_url = (request.form.get('job_url') or "").strip()
+    raw_job_url = request.form.get('job_url', '').strip()
+
+    if raw_job_url == "":
+        flash("No job URL entered.")
+        return redirect(url_for('index'))
+
     job_url = normalize_url(raw_job_url)
 
     if not is_valid_url(job_url):
@@ -155,42 +192,80 @@ def url_analyze():
 
     try:
         job_text, mode = extract_text_from_url(job_url)
-        session["job_text"] = job_text #stores job text and mode in session for later use (e.g.,comparision, debugging or display)
-        session["job_extract_mode"] = mode
+        app_data["job_text"] = job_text
+        app_data["job_extract_mode"] = mode
+        app_data["job_preview"] = job_text[:1000]
+        app_data["job_url"] = raw_job_url
     except ValueError as e:
         flash(str(e))
         return redirect(url_for('index'))
 
-    return f"<pre>{job_text[:2500]}</pre>"
+    return redirect(url_for('index'))
+
+def extract_keywords(text, top_n=20):
+    vectorizer = TfidfVectorizer(
+        stop_words='english',
+        ngram_range=(1,2),
+        max_features=1000
+    )
+
+    tfidf = vectorizer.fit_transform([text])
+    scores = tfidf.toarray()[0]
+    terms = vectorizer.get_feature_names_out()
+
+    ranked = sorted(zip(terms, scores), key=lambda x: x[1], reverse=True)
+
+    return [term for term, _ in ranked[:top_n]]
 
 @app.route('/score_match', methods=['POST'])
 def score_match():
-    #retrieves the raw resume text and raw job tetx from the session, which was stored during the /analyze route after extracting text from the uploaded PDF. 
-    # If for some reason it's not found, it defaults to an empty string.
-    resume_text = session.get("resume_raw_text", "")
-    job_text = session.get("job_text", "") 
+    resume_text = app_data.get("resume_raw_text", "")
+    job_text = app_data.get("job_text", "")
 
-    if not resume_text or not job_text:
-        flash("Resume or job description missing for matching.")
+    if not job_text:
+        flash("Job description is missing for matching.")
+        return redirect(url_for('index'))
+    if not resume_text:
+        flash("Resume text is empty.")
         return redirect(url_for('index'))
 
-    normalized_resume = normalize_resume(resume_text)
-    normalized_job = normalize_description(job_text)
+    normalized_resume = normalize_text(resume_text)
+    normalized_job = normalize_text(job_text)
 
     matcher = Match(normalized_resume, normalized_job)
-    match_result = matcher.tfidf_match(top_n=10) #calls the tfidf_match method of the Match class, which computes the similarity score and identifies the top overlapping and missing keywords between the resume and job description. The result is stored in match_result, which is a dictionary containing the similarity score, list of overlapping keywords, and list of missing keywords.
-    session["match_result"] = match_result #stores the match result in the session for later use (e.g., display or debugging)
-    return redirect(url_for('index')) #redirects the user back to the index page after computing the match score, where the results can be displayed or accessed for debugging.
+    match_result = matcher.tfidf_match(top_n=10)
+
+    app_data["match_result"] = match_result
+
+    return redirect(url_for('index'))
+
+
+@app.route('/clear', methods=['POST'])
+@app.route('/clear', methods=['POST'])
+def clear():
+    app_data["resume_raw_text"] = ""
+    app_data["job_text"] = ""
+    app_data["resume_preview"] = ""
+    app_data["job_preview"] = ""
+    app_data["job_extract_mode"] = ""
+    app_data["job_url"] = ""
+    app_data["match_result"] = None
+
+    flash("Session cleared.")
+    return redirect(url_for('index'))
+
 
 @app.route('/debug')
 def debug():
     resume_preview = session.get("resume_raw_text", "")[:500]
     job_preview = session.get("job_text", "")[:500]
     mode = session.get("job_extract_mode", "N/A")
+
     return (
         f"<h3>Resume (first 500)</h3><pre>{resume_preview}</pre>"
         f"<h3>Job (first 500) — mode: {mode}</h3><pre>{job_preview}</pre>"
     )
+
 
 if __name__ == "__main__":
     app.run(debug=True)
